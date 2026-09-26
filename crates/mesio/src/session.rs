@@ -395,7 +395,7 @@ impl MesioDownloader {
             return Ok(ProtocolType::Hls);
         }
 
-        if path.ends_with(".flv") {
+        if path.ends_with(".flv") || path.ends_with(".xs") {
             return Ok(ProtocolType::Flv);
         }
 
