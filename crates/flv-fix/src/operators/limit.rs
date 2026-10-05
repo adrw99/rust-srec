@@ -36,7 +36,7 @@ use flv::data::FlvData;
 use pipeline_common::split_reason::SplitReason;
 use pipeline_common::{PipelineError, Processor, StreamerContext};
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Instant, SystemTime, UNIX_EPOCH};
 use tracing::{debug, info};
 
 use crate::operators::segment_reinject::SegmentInitCache;
@@ -121,6 +121,7 @@ pub struct LimitOperator {
     config: LimitConfig,
     state: StreamState,
     last_split_time: Instant,
+    last_wallclock_hour: u64,
 }
 
 impl LimitOperator {
@@ -134,6 +135,10 @@ impl LimitOperator {
             config,
             state: StreamState::new(),
             last_split_time: Instant::now(),
+            last_wallclock_hour: SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .map(|d| d.as_secs() / 3600)
+                .unwrap_or(0),
         }
     }
 
@@ -175,6 +180,16 @@ impl LimitOperator {
                 );
                 return true;
             }
+        }
+
+        if self.state.first_content_tag_seen
+            && SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .map(|d| d.as_secs() / 3600)
+                .unwrap_or(0)
+                != self.last_wallclock_hour
+        {
+            return true;
         }
 
         false
@@ -224,6 +239,10 @@ impl LimitOperator {
         // Reset accumulated counters for the new segment
         self.state.reset_counters();
         self.last_split_time = Instant::now();
+        self.last_wallclock_hour = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_secs() / 3600)
+            .unwrap_or(0);
         Ok(())
     }
 }
@@ -244,6 +263,10 @@ impl Processor<FlvData> for LimitOperator {
                 self.state = StreamState::new();
                 self.state.cache.header = Some(header.clone());
                 self.last_split_time = Instant::now();
+                self.last_wallclock_hour = SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .map(|d| d.as_secs() / 3600)
+                    .unwrap_or(0);
 
                 // Forward the header
                 output(FlvData::Header(header))?;
